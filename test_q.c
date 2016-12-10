@@ -6,8 +6,8 @@
 #include "queue.h"
 
 #define SQL_HOST "localhost"
-#define SQL_USER "root"
-#define SQL_PASS "mypass"
+#define SQL_USER "test"
+#define SQL_PASS "test"
 #define SQL_DB "test"
 
 typedef struct url_t {
@@ -18,17 +18,20 @@ typedef struct url_t {
 
 url_t *new_url(char *url) {
 	url_t *n;
-	struct url_parts_t *parts;
-	n = (url_t *) malloc(sizeof(url_t));
+	url_parts_t *parts;
 
+	n = (url_t *) malloc(sizeof(url_t));
 	if(!n) {
 		perror("malloc");
 		return NULL;
 	}
+
 	parts = parse_url(url);
 	strncpy(n->url, url, sizeof(n->url)-1);
 	strncpy(n->domain, parts->host, sizeof(n->domain)-1);
+	
 	// free parts //
+	free_url_parts(parts);
 	return n;
 }
 
@@ -54,7 +57,7 @@ int main(void) {
 		return 1;
 	}
 
-	if(mysql_query(sql, "SELECT url, domain FROM queue LIMIT 100")) {
+	if(mysql_query(sql, "SELECT url FROM queue LIMIT 1000")) {
 		fprintf(stderr, "%s\n", mysql_error(sql));
 		return 1;
 	}
@@ -87,3 +90,5 @@ int main(void) {
 
 	return 0;
 }
+
+

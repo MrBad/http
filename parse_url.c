@@ -9,18 +9,18 @@
 //		free url_parts_t struct on error... more testing pls 
 //		No Regexp, no sscanf :)
 
-struct url_parts_t* parse_url(char *url) {
+url_parts_t* parse_url(char *url) {
 
 	char *p, *n;
 	int port;
-	struct url_parts_t *url_parts;
+	url_parts_t *url_parts;
 
 	if(! (p = strstr(url, "://"))) {
 		printf("Invalid scheme in url - use http://...\n");
 		return NULL;
 	}
 
-	url_parts = (struct url_parts_t *) calloc(1, sizeof(struct url_parts_t));
+	url_parts = (url_parts_t *) calloc(1, sizeof(url_parts_t));
 	if(url_parts == NULL) {
 		perror("Out of memory\n");
 		return NULL;
@@ -93,7 +93,7 @@ char *make_url(struct url_parts_t url_parts) {
 #endif
 
 
-void free_url_parts(struct url_parts_t *url_parts) {
+void free_url_parts(url_parts_t *url_parts) {
 	free(url_parts->scheme);
 	free(url_parts->host);
 	free(url_parts->path);
@@ -111,4 +111,5 @@ void free_url_parts(struct url_parts_t *url_parts) {
 	}
 	free(url_parts);
 }
+
 
