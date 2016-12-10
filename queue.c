@@ -33,7 +33,7 @@ queue_item_t *new_node(void *data) {
 		perror("malloc");
 		return NULL;
 	}   
-	n->data = (void *) data;
+	n->data = data;
 	n->prev = n->next = NULL;
 	return n;
 }
