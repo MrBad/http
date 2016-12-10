@@ -20,7 +20,7 @@ struct url_parts_t* parse_url(char *url) {
 		return NULL;
 	}
 
-	url_parts = calloc(1, sizeof(struct url_parts_t));
+	url_parts = (struct url_parts_t *) calloc(1, sizeof(struct url_parts_t));
 	if(url_parts == NULL) {
 		perror("Out of memory\n");
 		return NULL;
@@ -30,7 +30,7 @@ struct url_parts_t* parse_url(char *url) {
 	p += 3;
 	n = p;
 
-	for(;*n && *n != ':' && *n != '/' && *n != '?' && *n != '#'; n++); // until end, or : or /
+	for(;*n && *n != ':' && *n != '/' && *n != '?' && *n != '#'; n++); // until end, or : or / or ? or #
 	if(n == p) {
 		printf("Invalid host - empty host\n");
 		free(url_parts);
@@ -59,7 +59,7 @@ struct url_parts_t* parse_url(char *url) {
 	}
 
 	if(*n == '/') {
-		for(p = n; *n && *n != '?' && *n != '#'; n++); // until end, or ?
+		for(p = n; *n && *n != '?' && *n != '#'; n++); // until end, or ? or #
 		url_parts->path = strndup(p, n - p);
 		p = n;
 	}
@@ -86,9 +86,12 @@ struct url_parts_t* parse_url(char *url) {
 	return url_parts;
 }
 
+#if 0
 char *make_url(struct url_parts_t url_parts) {
 	
 }
+#endif
+
 
 void free_url_parts(struct url_parts_t *url_parts) {
 	free(url_parts->scheme);
