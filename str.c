@@ -4,7 +4,8 @@
 #include "str.h"
 
 str_t *new_str(char *str) {
-	str_t *s = (str_t *) malloc(sizeof(str_t));
+	str_t *s;
+	s = (str_t *) malloc(sizeof(str_t));
 	if(!s) {
 		perror("malloc");
 		return NULL;
@@ -13,7 +14,6 @@ str_t *new_str(char *str) {
 	s->str = strdup(str);
 	s->length = strlen(s->str);
 	s->size = s->length;
-	
 	return s;
 }
 

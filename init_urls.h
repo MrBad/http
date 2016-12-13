@@ -4,6 +4,7 @@
 
 // initial urls //
 char *initial_urls[] = {
+	"http://www.ibm.com",
 	"http://www.microsoft.com",
 	"http://www.opensource.org",
 	"http://www.opensource.org/test",
