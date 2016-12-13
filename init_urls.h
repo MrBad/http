@@ -1,5 +1,5 @@
 
-// initial urls //
+// initial list of random urls //
 char *initial_urls[] = {
 	"http://www.microsoft.com",
 	"http://www.opensource.org",
