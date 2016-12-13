@@ -1,14 +1,14 @@
 INCLUDE=.
-LIBS=-lmysqlclient
+LIBS=#-lmysqlclient
 CC=gcc
 OFLAGS=-c
 CFLAGS=-g -Wall -Wextra -std=gnu99 -pedantic-errors -I$(INCLUDE)
 
 
-OBJECTS=parse_url.o queue.o test_q.o
+OBJECTS=spider.o parse_url.o list.o demonize.o
 
 
-TARGET=test_q
+TARGET=spider
 
 all: $(TARGET)
 
@@ -20,5 +20,5 @@ $(TARGET): $(OBJECTS) Makefile
 	$(CC) $(CFLAGS) $(OFLAGS) -o $@ $<
 
 clean:
-	-rm $(OBJECTS) $(TARGET) tags
+	-rm $(OBJECTS) $(TARGET)
 
