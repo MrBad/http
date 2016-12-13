@@ -5,7 +5,7 @@ OFLAGS=-c
 CFLAGS=-g -Wall -Wextra -std=gnu99 -pedantic-errors -I$(INCLUDE)
 
 
-OBJECTS=spider.o parse_url.o list.o demonize.o
+OBJECTS=spider.o parse_url.o list.o demonize.o url.o str.o
 
 
 TARGET=spider

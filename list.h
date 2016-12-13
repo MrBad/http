@@ -1,3 +1,6 @@
+#ifndef _LIST_H_
+#define _LIST_H_
+
 // a node definition
 typedef struct node_t {
 	struct node_t *prev, *next;
@@ -10,10 +13,10 @@ typedef void (*free_function_t) (void *data);
 
 // common function to be called on each node in for_each 
 //typedef int (*iterator_function_t) (node_t *node, va_list *app);
-typedef int (*iterator_function_t) (node_t *node);
+typedef int (*iterator_function_t) (void *data);
 
 // use it in find node 
-typedef int (*compare_function_t) (node_t *node, void *what);
+typedef int (*compare_function_t) (void *data, void *what);
 
 // a list of nodes definition
 typedef struct {
@@ -45,4 +48,4 @@ node_t *list_for_each(list_t *list, iterator_function_t iterator);
 // find a node in the list by calling compare function on each node
 node_t *list_find(list_t *list, compare_function_t compare, void * what);
 
-
+#endif

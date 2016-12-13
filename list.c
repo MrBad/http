@@ -114,7 +114,7 @@ node_t *list_for_each(list_t *list, iterator_function_t iterator)
 	node = list->head;
 
 	while(node) {
-		found = iterator(node);
+		found = iterator(node->data);
 		if(found) {
 			last_node = node;
 			break;
@@ -131,7 +131,7 @@ node_t *list_find(list_t *list, compare_function_t compare, void *what) {
 	int found;
 	node = list->head;
 	while(node) {
-		found = compare(node, what);
+		found = compare(node->data, what);
 		if(found) {
 			last_node = node;
 		}

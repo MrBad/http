@@ -1,11 +1,16 @@
+#ifndef _INIT_URLS_
+#define _INIT_URLS_
 
-// initial list of random urls //
+
+// initial urls //
 char *initial_urls[] = {
 	"http://www.microsoft.com",
 	"http://www.opensource.org",
+	"http://www.opensource.org/test",
 	"http://www.google.com",
 	"http://www.yahoo.com",
 	"http://www.ibm.com",
+	"http://www.opensource.org/next",
 	"http://www.mysql.com",
 	"http://www.oracle.com",
 	"http://www.ripe.net",
@@ -50,3 +55,5 @@ char *initial_urls[] = {
 	"http://www.newslink.org",
 	"http://www.un.org",
 };
+
+#endif
