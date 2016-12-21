@@ -66,6 +66,15 @@ list_t *queue_get_next_urls(int limit) {
 	}
 	return ret;
 }
+url_t *queue_get_next_url(){
+	node_t *n = NULL;
+	if((n = spider->queue->head)) {
+		list_add(spider->queue_fetched, new_str(((url_t*)n->data)->url) );
+		spider->queue->head = n->next;
+		return ((url_t *)n->data);	
+	}
+	return NULL;
+}
 
 
 void create_initial_queues()
@@ -93,78 +102,77 @@ char *getHost(char *host)
 	return inet_ntoa(*(struct in_addr*)h->h_addr);
 }
 
+struct pid_fds_t {
+	pid_t pid;
+	char host[256];
+	int fd[2];	
+};
 
-void spider_loop() 
-{
-
-	//list_for_each(queue, print_url);
-	list_t *next_list;
-	node_t *n;
-#define NUM_PROCS 10
-
-	while(1) {
-		next_list = queue_get_next_urls(NUM_PROCS);
-		if(next_list->num_items == 0) {
-			printf("Empty list\n");
-			return;
-		}
-
-		int pipes[NUM_PROCS][2];
-		unsigned int i = 0;
-
-		for(n = next_list->head; n; n = n->next) {
-			url_t *url = (url_t *) n->data;
-			pid_t pid;
-			if(pipe(pipes[i]) != 0) {
-				perror("pipe");
-				exit(1);
-			}
-			if((pid = fork()) < 0) {
-				perror("fork()");
-				exit(1);
-			}
-			if(pid == 0) {
-				close(pipes[i][0]); // child close read
-				char msg[512];
-				snprintf(msg, sizeof(msg), "%s,%s", url->parts->host, getHost(url->parts->host));
-				write(pipes[i][1], msg, sizeof(msg)); // write to parent / pipe
-				exit(0);			
-			} 
-			close(pipes[i][1]); // parent close write
-			i++;
-		}
-
-
-		for(i = 0; i < next_list->num_items; i++) {
-			pid_t cpid;
-			if((cpid = waitpid(-1, NULL, 0)) < 0) {
-				perror("waitpid");
-				exit(0);
-			}
-			char msg[512], host[256], ip[16];
-			char *p = NULL;
-			read(pipes[i][0], msg, sizeof(msg)); // read from child / pipe 
-			if((p = strchr(msg, ',')) == NULL) {
-				printf("cannot find , \n");
-				continue;
-			}
-			strncpy(host, msg, p-msg);
-			host[p-msg] = 0;
-			strncpy(ip, ++p, sizeof(ip));
-			// serch on the list and add IP
-			for(n=next_list->head; n; n=n->next) {
-				if(strcmp(((url_t *)n->data)->parts->host, host)==0) {
-					strncpy(((url_t *)n->data)->ip, ip, sizeof(ip));
-					break;
+#define MAX_PROCS 30
+void spider_loop() {
+	url_t *url;
+	int num_procs = 0;
+	pid_t pid;
+	struct pid_fds_t pid_fds[MAX_PROCS];
+	int i,found;
+	char msg[512];
+	int solved = 0;
+	for(i=0;i<MAX_PROCS;i++){
+		pid_fds[i].pid = 0;
+	}
+	for(;;) {
+		url = queue_get_next_url();
+		if(url) {
+			found = 0;
+			for(i=0; i < MAX_PROCS; i++) {
+				if(pid_fds[i].pid == 0) {
+					found = 1; break;
 				}
 			}
+			assert(found != 0);
+			if(pipe(pid_fds[i].fd)!=0){
+				perror("pipe");exit(EXIT_FAILURE);
+			}
+			strncpy(pid_fds[i].host, url->parts->host, sizeof(pid_fds[i].host));
+			if((pid = fork()) < 0) {
+				perror("fork");
+				exit(EXIT_FAILURE);
+			}
+			if(pid == 0) {
+				close(pid_fds[i].fd[0]);
+				snprintf(msg, sizeof(msg), "%s", getHost(url->parts->host));
+				write(pid_fds[i].fd[1], msg, strlen(msg)+1);
+				//close(pid_fds[i].fd[1]); // will be closed by exit?!
+				exit(EXIT_SUCCESS);	
+			}
+			close(pid_fds[i].fd[1]);
+			pid_fds[i].pid = pid;
 		}
-		// print list //
-		for(n=next_list->head; n; n=n->next) {
-			printf("> %s, %s\n", ((url_t *)n->data)->parts->host, ((url_t *)n->data)->ip);
+
+		if(++num_procs >= MAX_PROCS || !url) {
+			pid = waitpid(-1, NULL, 0);
+			if(pid < 0) {
+				printf("No more childs!\n");
+				break;
+			}
+			for(i = 0, found = 0; i < MAX_PROCS; i++) {
+				if(pid_fds[i].pid == pid) {
+					found = 1; break;
+				}
+			} 
+			if(!found) {
+				printf("%i\n",pid);
+			}
+			assert(found != 0);
+			read(pid_fds[i].fd[0], msg, sizeof(msg));
+			printf("%s is %s\n", pid_fds[i].host, msg);
+			pid_fds[i].pid=0;
+			close(pid_fds[i].fd[0]);
+			num_procs--;
+			solved++;
 		}
-		list_close(next_list);
 	}
+	printf("solved: %d\n",solved);
 }
 
 int main(void) 
