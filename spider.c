@@ -160,12 +160,9 @@ void spider_loop() {
 					found = 1; break;
 				}
 			} 
-			if(!found) {
-				printf("%i\n",pid);
-			}
 			assert(found != 0);
 			read(pid_fds[i].fd[0], msg, sizeof(msg));
-			printf("%s is %s\n", pid_fds[i].host, msg);
+			printf("host: %s, ip: %s\n", pid_fds[i].host, msg);
 			pid_fds[i].pid=0;
 			close(pid_fds[i].fd[0]);
 			num_procs--;
