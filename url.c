@@ -48,7 +48,7 @@ void delete_url(void *_url)
 
 int print_url(void *_url) {
 	url_t *url = (url_t *) _url;
-	printf("%s, %lu, %s\n", url->parts->host, url->added_ts, url->url);
+	printf("%s, %s, %lu, %s\n", url->parts->host, url->ip, url->added_ts, url->url);
 	return 0;
 }
 

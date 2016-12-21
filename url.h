@@ -10,6 +10,7 @@
 typedef struct url_t {
 	char *url;
 	url_parts_t *parts;	
+	char ip[16];
 	time_t added_ts;
 } url_t;
 
