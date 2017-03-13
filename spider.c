@@ -234,6 +234,20 @@ int getFreeWorker(spider_t *spider)
 	return i;
 }
 
+void 
+spider_exit(spider_t *spider, int status) 
+{	
+	int i;
+	for(i = 0; i < MAX_THREADS; i++) {
+		if(!spider->workers[i])
+			continue;
+		write(spider->workers[i]->sfd, msgs[ABORT], strlen(msgs[ABORT]));
+	}
+	
+	close_queues(spider);
+	exit(status);
+}
+
 void processWorkers(spider_t *spider) 
 {
 	char buf[4096];
@@ -244,17 +258,20 @@ void processWorkers(spider_t *spider)
 	tv.tv_sec = 3;
 	tv.tv_usec = 0;
 	FD_ZERO(&rfds);
-	
 	for(i = 0; i < MAX_THREADS; i++) {
+		if(!spider->workers[i]) 
+			continue;
 		FD_SET(spider->workers[i]->sfd, &rfds);
 		maxfd = spider->workers[i]->sfd > maxfd ? spider->workers[i]->sfd : maxfd;
 	}
 
 	if((ret = select(maxfd+1, &rfds, NULL, NULL, &tv)) < 0) {
 		perror("select");
-		exit(1);
+		spider_exit(spider, 1);
 	} else if (ret > 0) {
 		for(i = 0; i < MAX_THREADS; i++) {
+			if(!spider->workers[i]) 
+				continue;
 			if(FD_ISSET(spider->workers[i]->sfd, &rfds)) {
 				n = read(spider->workers[i]->sfd, buf, sizeof(buf));
 				buf[n] = 0;
@@ -315,16 +332,16 @@ void processWorkers(spider_t *spider)
 	
 }
 
-void spider_loop(spider_t *spider) 
+void 
+spider_loop(spider_t *spider) 
 {
 	int i, id ;
 	char buf[4096];
-	
 	for(;;) {
 		getNextUrls(spider);
 		if(spider->queue->items == 0) {
 			printf("Queue starving\n");
-			return;
+			spider_exit(spider, 2);
 		}
 		for(i = 0; i < MAX_THREADS; i++) {
 			if(!url_arr[i]) continue;
@@ -339,7 +356,6 @@ void spider_loop(spider_t *spider)
 		}
 	}
 }
-
 
 int main() 
 {
@@ -358,6 +374,5 @@ int main()
 		return 1;
 	}
 	spider_loop(spider);
-	close_queues(spider);
-	return 0;
+	spider_exit(spider, 0);
 }

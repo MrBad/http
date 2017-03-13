@@ -21,3 +21,6 @@ ds.a: $(LOBJECTS)
 
 clean:
 	rm $(OBJECTS) $(TARGET) *.o spider test_buf test_http
+distclean:
+	rm ds.a
+	make clean
