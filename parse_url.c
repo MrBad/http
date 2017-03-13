@@ -16,7 +16,7 @@ url_parts_t* parse_url(char *url) {
 	url_parts_t *url_parts;
 
 	if(! (p = strstr(url, "://"))) {
-		printf("Invalid scheme in url - use http://...\n");
+		printf("Invalid scheme in url [%s] - use http://...\n", url);
 		return NULL;
 	}
 
@@ -112,4 +112,23 @@ void free_url_parts(url_parts_t *url_parts) {
 	free(url_parts);
 }
 
-
+url_parts_t *url_parts_dup(url_parts_t *parts) {
+	url_parts_t *p;
+	if(!(p = calloc(1, sizeof(*p)))) {
+		perror("calloc");
+		return NULL;
+	}
+	p->scheme = strdup(parts->scheme);
+	p->host = strdup(parts->host);
+	p->path = strdup(parts->path);
+	if(parts->user)
+		p->user = strdup(parts->user);
+	if(parts->pass)
+		p->pass = strdup(parts->pass);
+	if(parts->query_string) 
+		p->query_string = strdup(parts->query_string);
+	if(parts->fragment)
+		p->fragment = strdup(parts->fragment);
+	p->port = parts->port;
+	return p;
+}

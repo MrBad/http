@@ -1,24 +1,23 @@
 INCLUDE=.
-LIBS=#-lmysqlclient
+LIBS=ds.a -lrt
 CC=gcc
 OFLAGS=-c
-CFLAGS=-g -Wall -Wextra -std=gnu99 -pedantic-errors -I$(INCLUDE)
+DFLAGS=EST_TREE
+CFLAGS=-g -Wall -Wextra -std=gnu99 -pedantic-errors -I../ -I$(INCLUDE) -D$(DFLAGS)
 
+OBJECTS=worker.o http.o
+LOBJECTS=tree.o list.o str.o url.o buf.o parse_url.o
 
-OBJECTS=spider.o parse_url.o list.o demonize.o url.o str.o
-
-
-TARGET=spider
-
-all: $(TARGET)
-
-$(TARGET): $(OBJECTS) Makefile
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJECTS) $(LIBS)
-
+all: $(OBJECTS) ds.a Makefile spider.o test_http.o test_buf.o
+	$(CC) $(CFLAGS) -o test_buf test_buf.o $(OBJECTS) $(LIBS)
+	$(CC) $(CFLAGS) -o spider spider.o $(OBJECTS) $(LIBS)
+	$(CC) $(CFLAGS) -o test_http test_http.o $(OBJECTS) $(LIBS)
 
 %.o: %.c Makefile *.h
 	$(CC) $(CFLAGS) $(OFLAGS) -o $@ $<
 
-clean:
-	-rm $(OBJECTS) $(TARGET)
+ds.a: $(LOBJECTS)
+	ar rcs ds.a $(LOBJECTS)
 
+clean:
+	rm $(OBJECTS) $(TARGET) *.o spider test_buf test_http

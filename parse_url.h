@@ -14,5 +14,5 @@ typedef struct url_parts_t {
 
 url_parts_t* parse_url(char *url);
 void free_url_parts(url_parts_t *url_parts);
-
+url_parts_t *url_parts_dup(url_parts_t *p);
 #endif

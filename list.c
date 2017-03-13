@@ -1,143 +1,82 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include "list.h"
+#include "ds_common.h"
 
-list_t * list_open(free_function_t free_function)
+list_t *
+list_open(del_func_t del_func) 
 {
 	list_t *list;
-	list = (list_t *) malloc(sizeof(list_t));
-	if(!list) {
+	if(!(list = malloc(sizeof(*list)))) {
 		perror("malloc");
 		return NULL;
 	}
 	list->head = list->tail = NULL;
-	list->num_items = 0;
-	list->free_function = free_function;
-
+	list->items = 0;
+	list->del_func = del_func;
 	return list;
 }
 
-node_t *new_node(void *data) 
+int list_close(list_t *list) 
 {
-	node_t *node;
-	node = (node_t *) malloc(sizeof(node_t));
-	node->next = node->prev = NULL;
-	node->data = data;
-	return node;
-}
-
-void list_add_node(list_t *list, node_t *node) 
-{
-	if(!list->head) {
-		list->head = list->tail = node;	
-	} else {
-		node->prev = list->tail;
-		list->tail->next = node;
-		list->tail = node;
+	list_node_t *n;
+	while(list->head) {
+		n = list->head->next;
+		if(list->del_func)
+			list->del_func(list->head->data);
+		free(list->head);
+		list->head = n;
 	}
-	list->num_items++;
+	return 0;
 }
 
-node_t *list_add(list_t *list, void *data) {
-	node_t *node;
-	node = new_node(data);
-	list_add_node(list, node);
-	return node;
+list_node_t *list_node_new(void *data) 
+{
+	list_node_t *n;
+	if(!(n = malloc(sizeof(*n)))) {
+		perror("malloc");
+		return NULL;
+	}
+	n->data = data;
+	n->prev = n->next = NULL;
+	return n;
 }
 
-void list_del(list_t *list, node_t *node) {
-	node_t *prev, *next;
+int list_add(list_t *list, void *data) 
+{
+	list_node_t *n;
+	if(!data)
+		return -1;
+	if(!(n = list_node_new(data))) {
+		return -1;
+	}
+	if(!list->head)
+		list->head = list->tail = n;
+	else {
+		n->prev = list->tail;
+		list->tail->next = n;
+		list->tail = n;
+	}
+	list->items++;
+	return 0;
+}
+
+int list_del(list_t *list, list_node_t *node) 
+{
+	list_node_t *prev, *next;
 	prev = node->prev;
 	next = node->next;
-	if(prev) {
+	if(prev)
 		prev->next = next;
-	} else {
+	else
 		list->head = next;
-	}
-	if(next) {
+	if(next)
 		next->prev = prev;
-	} else {
-		list->tail = prev;
-	}
-	if(list->free_function) {
-		list->free_function(node->data);
-	}
+	else
+		list->tail = prev;	
+	if(list->del_func)
+		list->del_func(node->data);
 	free(node);
-	list->num_items--;
+	list->items--;
+	return 0;
 }
-
-void list_close(list_t *list) 
-{
-	node_t *node;
-
-	while(list->head) {
-		node = list->head;
-		if(list->free_function) {
-			list->free_function(node->data);
-		}
-		free(node);
-		list->head = node->next;
-	}
-	free(list);
-}
-
-#if 0
-node_t *list_for_each(list_t *list, iterator_function_t iterator, ...) 
-{
-	node_t *last_node = NULL;
-   	node_t *node;
-	int found;
-	node = list->head;
-
-	va_list ap;
-
-	while(node) {
-		va_start(ap, iterator);
-		found = iterator(node, &ap);
-		va_end(ap);
-		if(found) {
-			last_node = node;
-			break;
-		}
-		node = node->next;
-	}
-	return last_node;	
-}
-#endif 
-
-node_t *list_for_each(list_t *list, iterator_function_t iterator) 
-{
-	node_t *last_node = NULL;
-   	node_t *node;
-	int found;
-	node = list->head;
-
-	while(node) {
-		found = iterator(node->data);
-		if(found) {
-			last_node = node;
-			break;
-		}
-		node = node->next;
-	}
-	return last_node;	
-}
-
-node_t *list_find(list_t *list, compare_function_t compare, void *what) {
-	node_t *last_node = NULL;
-	node_t *node;
-	
-	int found;
-	node = list->head;
-	while(node) {
-		found = compare(node->data, what);
-		if(found) {
-			last_node = node;
-		}
-		node = node->next;
-	}
-	return last_node;
-}
-
-

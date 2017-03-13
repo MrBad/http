@@ -1,31 +1,18 @@
-#ifndef _URL_H_
-#define _URL_H_
-
-
-#include <stdlib.h>
-#include <time.h>
-#include "list.h"
+#ifndef _URL_H
+#define _URL_H
+#include "str.h"
 #include "parse_url.h"
 
-typedef struct url_t {
-	char *url;
-	url_parts_t *parts;	
-	char ip[16];
+typedef struct {
+	str_t *url;
+	url_parts_t *parts;
+	char *ip;
 	time_t added_ts;
 } url_t;
 
 
-url_t *new_url(char *str_url); 
-
-void delete_url(void *url);
-
-// function used in lists / callbacks
-int print_url(void *_url);
-
-//int find_url(void *_url, void *_compared_url);
-
-
-url_t *url_clone(url_t *inurl);
-
-
+url_t *url_new(str_t *str);
+void  url_del(url_t *url);
+url_t *url_dup(url_t *url);
+void url_toString(url_t *url);
 #endif

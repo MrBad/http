@@ -1,3 +1,0 @@
-# http
-Playing around in C, nothing serious, nothing functional
-Maybe it will be a small crawler...

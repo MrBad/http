@@ -2,199 +2,362 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <assert.h>
-#include "demonize.h"
-#include "list.h"
-#include "spider.h"
-#include "parse_url.h"
-#include "init_urls.h"
-#include "url.h"
-#include "str.h"
 #include <fcntl.h>
-#include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <assert.h>
+#include "list.h"
+#include "tree.h"
+#include "str.h"
+#include "url.h"
+#include "worker.h"
 
-typedef struct spider_params_t {
-	list_t *queue;
-	list_t *queue_fetched;
-} spider_params_t;
-
-spider_params_t *spider;
-
-
-
-// get [limit] urls from queue, with distinct hostnames, 
-// skipping and removing the links that are allready in spider->queue_fetched //
-// returns a list on [limit] url_t linked list, that needs to be freed
-list_t *queue_get_next_urls(int limit) {
-	node_t *n, *h;
-	int i = 0;
-	list_t *ret;
-
-	ret	= list_open(delete_url);
-	for(n = spider->queue->head; n && i < limit; n=n->next) {
-		// check if this host allready exists in returned list
-		int found = 0;
-		for(h=ret->head; h; h=h->next) {
-			if(strcmp(((url_t *)n->data)->parts->host, ((url_t *)h->data)->parts->host) == 0) {
-				printf("link %s already in ret\n", ((url_t*)n->data)->url);
-				found = 1; 
-				break;
-			}
-		}
-		if(!found) {
-			// check if this url is allready fetched;
-			for(h = spider->queue_fetched->head; h; h=h->next) {
-				if(strcmp(((url_t*)n->data)->url, ((url_t*)h->data)->url) == 0) {
-					printf("link %s already fetched\n", ((url_t*)n->data)->url);
-					list_del(spider->queue, n);
-					found = 1;
-					break;
-				}
-			}
-		}
-		if(!found) {
-			i++;
-			// add node to return list
-			list_add(ret, url_clone((url_t *)n->data));
-			// add the link to fetched list
-			list_add(spider->queue_fetched, new_str(((url_t *)n->data)->url));
-			// delete the node and free it from main queue list
-			list_del(spider->queue, n);
-		}
-	}
-	return ret;
-}
-url_t *queue_get_next_url(){
-	node_t *n = NULL;
-	if((n = spider->queue->head)) {
-		list_add(spider->queue_fetched, new_str(((url_t*)n->data)->url) );
-		spider->queue->head = n->next;
-		return ((url_t *)n->data);	
-	}
-	return NULL;
-}
-
-
-void create_initial_queues()
+#define MAX_THREADS 2
+typedef struct spider_params 
 {
+	list_t *queue;	// list of url_t
+	tree_t *seen;	// list of str_t
+	char *seen_db_file;
+	char *queue_db_file;
+	worker_t *workers[MAX_THREADS];
+} spider_t;
 
-	spider->queue = list_open(delete_url);
-	spider->queue_fetched = list_open(delete_str);
 
-	int urls_size = sizeof(initial_urls) / sizeof(*initial_urls);
-	for(int i = 0; i < urls_size; i++) {
-		list_add(spider->queue, new_url(initial_urls[i]));
-	}
-	//	list_add(spider->queue_fetched, new_str("http://www.microsoft.com"));
-}
+static int min_len;
 
-void close_queues() {
-	list_close(spider->queue);
-	list_close(spider->queue_fetched);
-}
+#define min(a, b) (a) < (b) ? a : b
 
-char *getHost(char *host)
+int load_seen_db(spider_t *spider) 
 {
-	struct hostent *h;
-	h = gethostbyname(host);
-	return inet_ntoa(*(struct in_addr*)h->h_addr);
+	FILE *fp;
+	char buf[4096];
+	int len, i = 0;
+	printf("Loading seen data from %s", spider->seen_db_file);
+	fflush(stdout);
+	if(!(fp = fopen(spider->seen_db_file, "r"))) {
+		fprintf(stdout, " empty, starting from 0\n");
+		return 0;
+	}
+	while(fgets(buf, sizeof(buf), fp)) {
+		len = strlen(buf);
+		buf[len-1] = 0;
+		min_len = min(min_len, len);
+		tree_add(spider->seen, strNew(buf));
+		i++;
+	}
+	printf(", %d urls\n", i);
+	fclose(fp);
+	return 0;
 }
 
-struct pid_fds_t {
-	pid_t pid;
-	char host[256];
-	int fd[2];	
-};
+int save_url(void *url, void *ctx) 
+{
+	int *fd = ctx, n = 0;
+	str_t *s = url;
+	if(!url) return -1;
+	n = write(*fd, s->str, s->len);
+	n += write(*fd, "\n", 1);
+	return n;
+}
 
-#define MAX_PROCS 30
-void spider_loop() {
+int save_seen_db(spider_t *spider) 
+{
+	void *ctx;
+	int fd = open(spider->seen_db_file, O_WRONLY|O_TRUNC|O_CREAT, 0666);
+	if(fd < 0) {
+		perror("open");
+		return -1;
+	}
+	ctx = &fd;
+	tree_foreach(spider->seen, save_url, 0, ctx);
+	close(fd);
+	return 0;
+}
+
+int load_queue_db(struct spider_params *spider) 
+{
+	FILE *fp;
+	char buf[4096];
+	int len, i = 0;
 	url_t *url;
-	int num_procs = 0;
-	pid_t pid;
-	struct pid_fds_t pid_fds[MAX_PROCS];
-	int i,found;
-	char msg[512];
-	int solved = 0;
-	for(i=0;i<MAX_PROCS;i++){
-		pid_fds[i].pid = 0;
+	str_t *str;
+	printf("Loading queue from file %s", spider->queue_db_file);	
+	fflush(stdout);
+	if(!(fp = fopen(spider->queue_db_file, "r"))) {
+		fprintf(stderr, ". Cannot open initial queue file, aborting\n");
+		return -1;
 	}
-	for(;;) {
-		url = queue_get_next_url();
-		if(url) {
-			found = 0;
-			for(i=0; i < MAX_PROCS; i++) {
-				if(pid_fds[i].pid == 0) {
-					found = 1; break;
-				}
-			}
-			assert(found != 0);
-			if(pipe(pid_fds[i].fd)!=0){
-				perror("pipe");exit(EXIT_FAILURE);
-			}
-			strncpy(pid_fds[i].host, url->parts->host, sizeof(pid_fds[i].host));
-			if((pid = fork()) < 0) {
-				perror("fork");
-				exit(EXIT_FAILURE);
-			}
-			if(pid == 0) {
-				close(pid_fds[i].fd[0]);
-				snprintf(msg, sizeof(msg), "%s", getHost(url->parts->host));
-				write(pid_fds[i].fd[1], msg, strlen(msg)+1);
-				//close(pid_fds[i].fd[1]); // will be closed by exit?!
-				exit(EXIT_SUCCESS);	
-			}
-			close(pid_fds[i].fd[1]);
-			pid_fds[i].pid = pid;
+	while(fgets(buf, sizeof(buf), fp)) {
+		len = strlen(buf);
+		buf[len-1] = 0;
+		str = strNew(buf);
+		if(!str) continue;
+		url = url_new(str);
+		if(!url) {
+			strDel(str);
+			continue;
 		}
-
-		if(++num_procs >= MAX_PROCS || !url) {
-			pid = waitpid(-1, NULL, 0);
-			if(pid < 0) {
-				printf("No more childs!\n");
-				break;
-			}
-			for(i = 0, found = 0; i < MAX_PROCS; i++) {
-				if(pid_fds[i].pid == pid) {
-					found = 1; break;
-				}
-			} 
-			assert(found != 0);
-			read(pid_fds[i].fd[0], msg, sizeof(msg));
-			printf("host: %s, ip: %s\n", pid_fds[i].host, msg);
-			pid_fds[i].pid=0;
-			close(pid_fds[i].fd[0]);
-			num_procs--;
-			solved++;
-		}
+		list_add(spider->queue, url);
+		i++;
 	}
-	printf("solved: %d\n",solved);
+	printf(", %d urls\n", i);
+	if(i == 0) {
+		fprintf(stderr, "Nothing more to fetch\n");
+		return -1;
+	}
+	return 0;
 }
 
-int main(void) 
+int save_queue_db(spider_t *spider) 
 {
+	int fd = open(spider->queue_db_file, O_WRONLY|O_TRUNC|O_CREAT, 0666);
+	if(fd < 0) {
+		perror("open");
+		return -1;
+	}
+	list_node_t *n;
+	list_foreach(spider->queue, n) {
+		url_t *u = n->data;
+		if(write(fd, u->url->str, u->url->len) < 0) {
+			perror("write");
+			return -1;
+		}
+		write(fd, "\n", 1);
+	}
+	close(fd);
+	return 0;
+}
 
-	if(DEMONIZE) {
-		if(! demonize(PIDFILE)) {
-			printf("Cannot demonize, exiting");
-			exit(1);
+
+void del_url(void *data) 
+{
+	url_del((url_t*) data);
+}
+
+int cmp_str(void *s1, void *s2) 
+{
+	return strCmp((str_t*)s1, (str_t*)s2);
+}
+
+void del_str(void *data) 
+{
+	strDel((str_t*)data);
+}
+
+int create_queues(struct spider_params *spider) 
+{
+	if(!(spider->queue = list_open(del_url))) {
+		return -1;
+	}
+	if(!(spider->seen = tree_open(cmp_str, del_str))) {
+		return -1;
+	}
+	// read dbs //
+	if(load_seen_db(spider) < 0) {
+		return -1;
+	}
+	if(load_queue_db(spider) < 0) {
+		return -1;
+	}
+	return 0;
+}
+
+int close_queues(struct spider_params *spider) 
+{
+	save_seen_db(spider);
+	save_queue_db(spider);
+	tree_close(spider->seen);
+	list_close(spider->queue);
+	return 0;
+}
+
+
+url_t *url_arr[MAX_THREADS];
+
+
+int in_host_arr(char *host) {
+	int i;
+	for(i = 0; i < MAX_THREADS; i++) {
+		if(!url_arr[i]) continue;
+		if(strcmp(host, url_arr[i]->parts->host) == 0) {
+			return 0;
 		}
 	}
-	spider = (spider_params_t *) malloc(sizeof(spider_params_t));
-	if(!spider) {
-		perror("spider");
+	return -1;
+}
+
+int getNextUrls(spider_t *spider) 
+{
+	list_node_t *node;
+	int i = 0, items;	
+	url_t *url;
+	list_node_t *nodes[MAX_THREADS];
+	memset(url_arr, 0, sizeof(url_arr));
+	memset(nodes, 0, sizeof(nodes));
+	list_foreach(spider->queue, node) {
+		url = node->data;
+		if(in_host_arr(url->parts->host) < 0) {
+			nodes[i] = node;
+			url_arr[i++] = url_dup(url);
+			items++;
+		}
+		if(i == MAX_THREADS) break;
+	}
+
+	for(i = 0; i < MAX_THREADS; i++) {
+		if(!nodes[i]) continue;
+		list_del(spider->queue, nodes[i]);
+	}
+	return items;
+}
+
+int getFreeWorker(spider_t *spider) 
+{
+	int i;
+	worker_t *w;
+	for(i = 0; i < MAX_THREADS; i++) {
+		if(!spider->workers[i]) {
+			if(!(w = worker_new())) {
+				return -1;
+			}
+			spider->workers[i] = w;
+			break;
+		} else if(spider->workers[i]->status == AVAILABLE) {
+			break;
+		}
+	}
+	if(i == MAX_THREADS) {
+		return -1;
+	}
+	return i;
+}
+
+void processWorkers(spider_t *spider) 
+{
+	char buf[4096];
+	struct timeval tv;
+	fd_set rfds;
+	int i, n, maxfd, ret;
+
+	tv.tv_sec = 3;
+	tv.tv_usec = 0;
+	FD_ZERO(&rfds);
+	
+	for(i = 0; i < MAX_THREADS; i++) {
+		FD_SET(spider->workers[i]->sfd, &rfds);
+		maxfd = spider->workers[i]->sfd > maxfd ? spider->workers[i]->sfd : maxfd;
+	}
+
+	if((ret = select(maxfd+1, &rfds, NULL, NULL, &tv)) < 0) {
+		perror("select");
+		exit(1);
+	} else if (ret > 0) {
+		for(i = 0; i < MAX_THREADS; i++) {
+			if(FD_ISSET(spider->workers[i]->sfd, &rfds)) {
+				n = read(spider->workers[i]->sfd, buf, sizeof(buf));
+				buf[n] = 0;
+				int type = getType(buf);
+				char *msg = buf+2;
+				
+				if(type == GOT_LINK) {
+					// mark worker AVAILABLE
+					// and add link to seen links
+					spider->workers[i]->status = AVAILABLE;
+					str_t *str = strNew(msg);
+					if(tree_find(spider->seen, str)==0) {
+						strDel(str);
+						continue;
+					}
+					tree_add(spider->seen, str);
+				}
+				else if(type == ABORTING) {
+					// worker is aborting //
+					// free it and mark slot free //
+					// later, maibe i will just set pid 0 //
+					free(spider->workers[i]); 
+					spider->workers[i] = 0;
+				} 
+
+				// worker discovered a new url //
+				else if(type == PUT_LINK) {
+					str_t *str = strNew(msg);
+					if(!str) {
+						perror("strNew");
+						continue;
+					}
+					if(tree_find(spider->seen, str)) {
+						strDel(str);
+						continue;
+					}
+					url_t *url = url_new(str);
+					if(!url) {
+						strDel(str);
+						perror("url_new");
+						continue;
+					}
+					list_add(spider->queue, url);
+				} 
+
+				// worker is sending page txt //
+				else if(type == PUT_TXT) {
+					printf("handling txt\n");
+				} 
+				else {
+					printf("Not handled %d %s\n", type, msg);
+				}
+			}
+		}	
+	} else {
+		write(1, ".", 1);
+	}
+	
+}
+
+void spider_loop(spider_t *spider) 
+{
+	int i, id ;
+	char buf[4096];
+	
+	for(;;) {
+		getNextUrls(spider);
+		if(spider->queue->items == 0) {
+			printf("Queue starving\n");
+			return;
+		}
+		for(i = 0; i < MAX_THREADS; i++) {
+			if(!url_arr[i]) continue;
+			while((id = getFreeWorker(spider)) < 0) {
+				processWorkers(spider);
+			}
+			// transmit worker the url //
+			strcpy(buf, msgs[GET_LINK]);
+			strcat(buf, url_arr[i]->url->str);
+			write(spider->workers[id]->sfd, buf, strlen(buf));
+			spider->workers[id]->status = FETCHING;
+		}
+	}
+}
+
+
+int main() 
+{
+	struct spider_params *spider;
+	char *queue_db_file = "queue.db";
+	char *seend_db_file = "seen.db";
+
+	if(!(spider = malloc(sizeof(struct spider_params)))) {
+		perror("malloc");
 		return 1;
 	}
-	create_initial_queues();
-
-	spider_loop();
-
-	node_t *n;
-	for(n=spider->queue_fetched->head; n; n=n->next) {
-		//printf("%s\n", ((str_t *)n->data)->str);
+	spider->queue_db_file = queue_db_file;
+	spider->seen_db_file = seend_db_file;
+	if(create_queues(spider) < 0) {
+		fprintf(stderr, "Cannot create queues\n");
+		return 1;
 	}
-	printf("fetched: %d\n", spider->queue_fetched->num_items);
-	close_queues();
-
+	spider_loop(spider);
+	close_queues(spider);
+	return 0;
 }
