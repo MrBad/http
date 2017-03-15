@@ -12,8 +12,8 @@ all: $(OBJECTS) ds.a Makefile spider.o test_http.o test_buf.o
 	$(CC) $(CFLAGS) -o test_buf test_buf.o $(OBJECTS) $(LIBS)
 	$(CC) $(CFLAGS) -o spider spider.o $(OBJECTS) $(LIBS)
 	$(CC) $(CFLAGS) -o test_http test_http.o $(OBJECTS) $(LIBS)
-	echo "" > seen.db
-	cat queue.db.1 > queue.db
+#	echo "" > seen.db
+#	cat queue.db.1 > queue.db
 
 %.o: %.c Makefile *.h
 	$(CC) $(CFLAGS) $(OFLAGS) -o $@ $<

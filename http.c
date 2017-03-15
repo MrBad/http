@@ -68,7 +68,8 @@ request_t *request_new()
 
 void request_del(request_t *req)
 {
-	free(req->url);
+	if(req->url)
+		free(req->url);
 	if(req->header)
 		free(req->header);	
 	if(req->user_agent)

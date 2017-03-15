@@ -117,7 +117,6 @@ worker_getLink(worker_t *self, char *base_url)
 	int redirects = 0;
 	request_t *req;
 	response_t *res;
-	
 	do {
 		printf("Getting link: %s\n", url);
 		req = request_new();
@@ -142,6 +141,10 @@ worker_getLink(worker_t *self, char *base_url)
 	if(redirects > 0) {
 		printf("redirects: %d from original %s to %s\n", 
 				redirects, base_url, url);
+	}
+	if(redirects == MAX_REDIRECTS) {
+		sendMsg(self->cbuf, FAIL_LINK, url);
+		return;	
 	}
 
 	printf("got %d, body bytes: %lu\n", res->status, res->length);
