@@ -180,7 +180,7 @@ int parse_headers(response_t *res)
 				return -1;
 			}
 			strncpy(res->redir_url, n, k-n);
-			printf("REDIR: {%s}\n", res->redir_url);
+			//printf("REDIR: {%s}\n", res->redir_url);
 		}
 	}
 
@@ -269,6 +269,10 @@ response_t *getLink(request_t *req)
 
 	if(!(url_parts = parse_url(req->url))) {
 		fprintf(stderr, "getLink: cannot parse url: %s\n", req->url);
+		goto fail;
+	}
+	if(!strcmp(url_parts->scheme, "http") == 0) {
+		fprintf(stderr, "getLink: %s - sorry, only http support yet\n", req->url);
 		goto fail;
 	}
 	if(!(res = response_new())) {
@@ -396,28 +400,6 @@ response_t *getLink(request_t *req)
 	free_url_parts(url_parts);
 	buf_del(buf);
 	fclose(fp);	
-	
-	// we should reuse fp in future //
-	if(req->allow_redirect) {
-		if(res->status == 301 || res->status == 302) {
-			// res //
-			if(req->redirects == req->max_redirects) 
-				return res;
-			char *old_url = req->url;
-			req->url = res->redir_url;
-			
-			int status = res->status;
-			response_del(res);
-			req->redirects++;
-
-			res = getLink(req);
-
-
-			res->redir_url = old_url;	
-			res->redirects = req->redirects;
-			
-		}
-	}
 	
 	return res;
 

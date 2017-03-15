@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "http.h"
+#include "links.h"
 
 int main(int argc, char *argv[]) 
 {
@@ -34,6 +35,8 @@ int main(int argc, char *argv[])
 	printf("charset: %s\n", res->charset);
 	printf("Body Len: %lu\n", res->length);
 	printf("Content-Type: %s/%s\n", res->type, res->subtype);
-	
+
+	extract_links(req->url, res->body);
+
 	return 0;	
 }

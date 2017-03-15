@@ -233,7 +233,6 @@ tree_node_find(tree_node_t *root, void *data, cmp_func_t cmp_func)
 		node = tree_node_find(root->lft, data, cmp_func);
 	else if(res > 0)
 		node = tree_node_find(root->rgt, data, cmp_func);
-
 	return node;
 }
 

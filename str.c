@@ -30,10 +30,10 @@ int bads;
 void strDel(void *str) 
 {
 	str_t *s = str;
-	if(!s) {
+	if(!str) {
 		bads++;
 		printf("strDel: bptr %d", bads);
-//		return;
+		return;
 	}
 	if(s->str) {
 		free(s->str);

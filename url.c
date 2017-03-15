@@ -21,6 +21,7 @@ url_t *url_new(str_t *s)
 		free(url);
 		return NULL;
 	}
+	url->ip = NULL;
 	return url;
 }
 
@@ -40,7 +41,7 @@ url_t *url_dup(url_t *url)
 void url_del(url_t *url) 
 {
 	strDel(url->url);
-	if(url->ip) strDel(url->ip);
+	if(url->ip) free(url->ip);
 	free_url_parts(url->parts);
 	free(url);
 }

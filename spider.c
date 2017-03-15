@@ -8,13 +8,16 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <assert.h>
+#include <signal.h>
 #include "list.h"
 #include "tree.h"
 #include "str.h"
 #include "url.h"
 #include "worker.h"
+#include "read_line.h"
 
-#define MAX_THREADS 2
+extern int master;
+#define MAX_THREADS 10
 typedef struct spider_params 
 {
 	list_t *queue;	// list of url_t
@@ -138,6 +141,10 @@ void del_url(void *data)
 
 int cmp_str(void *s1, void *s2) 
 {
+	str_t *a, *b;
+	a = s1;
+	b = s2;
+	return strcmp(a->str, b->str);
 	return strCmp((str_t*)s1, (str_t*)s2);
 }
 
@@ -241,14 +248,15 @@ spider_exit(spider_t *spider, int status)
 	for(i = 0; i < MAX_THREADS; i++) {
 		if(!spider->workers[i])
 			continue;
-		write(spider->workers[i]->sfd, msgs[ABORT], strlen(msgs[ABORT]));
+		sendMsg(spider->workers[i]->cbuf, ABORT, NULL);
 	}
 	
 	close_queues(spider);
 	exit(status);
 }
 
-void processWorkers(spider_t *spider) 
+void 
+processWorkers(spider_t *spider) 
 {
 	char buf[4096];
 	struct timeval tv;
@@ -261,8 +269,9 @@ void processWorkers(spider_t *spider)
 	for(i = 0; i < MAX_THREADS; i++) {
 		if(!spider->workers[i]) 
 			continue;
-		FD_SET(spider->workers[i]->sfd, &rfds);
-		maxfd = spider->workers[i]->sfd > maxfd ? spider->workers[i]->sfd : maxfd;
+		FD_SET(spider->workers[i]->cbuf->fd, &rfds);
+		maxfd = spider->workers[i]->cbuf->fd > maxfd ? 
+			spider->workers[i]->cbuf->fd : maxfd;
 	}
 
 	if((ret = select(maxfd+1, &rfds, NULL, NULL, &tv)) < 0) {
@@ -272,16 +281,31 @@ void processWorkers(spider_t *spider)
 		for(i = 0; i < MAX_THREADS; i++) {
 			if(!spider->workers[i]) 
 				continue;
-			if(FD_ISSET(spider->workers[i]->sfd, &rfds)) {
-				n = read(spider->workers[i]->sfd, buf, sizeof(buf));
-				buf[n] = 0;
+			if(FD_ISSET(spider->workers[i]->cbuf->fd, &rfds)) {
+				worker_t *worker = spider->workers[i];
+eagain:
+				if((n = read_line(worker->cbuf, buf, sizeof(buf))) < 0) {
+					fprintf(stderr, "MASTER: cannot read line\n");
+					worker_del(worker);
+					spider->workers[i] = 0;
+				} else if(n == 0) {
+					continue;
+					fprintf(stderr, "MASTER: child has close connection\n");
+					// close child //
+					worker_del(worker);
+					spider->workers[i] = 0;
+				}
+					
+				if(buf[n-1] == '\n') buf[n-1] = 0;
 				int type = getType(buf);
 				char *msg = buf+2;
-				
+
+
 				if(type == GOT_LINK) {
 					// mark worker AVAILABLE
 					// and add link to seen links
-					spider->workers[i]->status = AVAILABLE;
+					printf("worker is ready\n");
+					worker->status = AVAILABLE;
 					str_t *str = strNew(msg);
 					if(tree_find(spider->seen, str)==0) {
 						strDel(str);
@@ -289,11 +313,17 @@ void processWorkers(spider_t *spider)
 					}
 					tree_add(spider->seen, str);
 				}
+				else if(type == FAIL_LINK) {
+					printf("fail link %s\n", msg);
+					worker->status = AVAILABLE;
+				}
 				else if(type == ABORTING) {
 					// worker is aborting //
 					// free it and mark slot free //
 					// later, maibe i will just set pid 0 //
-					free(spider->workers[i]); 
+					printf("MASTER: child requested abort\n");
+					worker_del(worker);
+					//kill(spider->workers[i]->pid, SIGKILL);
 					spider->workers[i] = 0;
 				} 
 
@@ -302,27 +332,31 @@ void processWorkers(spider_t *spider)
 					str_t *str = strNew(msg);
 					if(!str) {
 						perror("strNew");
-						continue;
+						goto eagain;
 					}
-					if(tree_find(spider->seen, str)) {
+					if(tree_find(spider->seen, str)==0) {
+						//printf("url %s exists\n", str->str);
 						strDel(str);
-						continue;
+						goto eagain;
 					}
 					url_t *url = url_new(str);
 					if(!url) {
 						strDel(str);
 						perror("url_new");
-						continue;
+						goto eagain;
 					}
 					list_add(spider->queue, url);
-				} 
+					//printf("got link: [%s]\n", msg);
+					goto eagain;
+				}
 
 				// worker is sending page txt //
 				else if(type == PUT_TXT) {
 					printf("handling txt\n");
 				} 
 				else {
-					printf("Not handled %d %s\n", type, msg);
+					printf("Master: Not handled %d [%s]\n", type, msg);
+			//		spider_exit(spider, 1);
 				}
 			}
 		}	
@@ -336,7 +370,7 @@ void
 spider_loop(spider_t *spider) 
 {
 	int i, id ;
-	char buf[4096];
+	//char buf[4096];
 	for(;;) {
 		getNextUrls(spider);
 		if(spider->queue->items == 0) {
@@ -349,30 +383,54 @@ spider_loop(spider_t *spider)
 				processWorkers(spider);
 			}
 			// transmit worker the url //
-			strcpy(buf, msgs[GET_LINK]);
-			strcat(buf, url_arr[i]->url->str);
-			write(spider->workers[id]->sfd, buf, strlen(buf));
+			sendMsg(spider->workers[id]->cbuf, GET_LINK, url_arr[i]->url->str);
 			spider->workers[id]->status = FETCHING;
 		}
 	}
 }
 
+spider_t *sp;
+void onExit() 
+{
+	if(!master) 
+		return;
+	sigset_t mask_set, old_mask;
+	signal(SIGTERM, SIG_DFL);
+	signal(SIGINT, SIG_DFL);
+	sigfillset(&mask_set);
+	sigprocmask(SIG_SETMASK, &mask_set, &old_mask);
+
+
+	printf("Receiving terminate signal\n");
+	fflush(stdout);
+
+	spider_exit(sp, 0);	
+
+	printf("Spider exited normally\n"); fflush(stdout);
+	kill(getpid(), SIGTERM);
+}
 int main() 
 {
 	struct spider_params *spider;
 	char *queue_db_file = "queue.db";
 	char *seend_db_file = "seen.db";
-
+	//signal(SIGPIPE, SIG_IGN);
+//	signal(SIGCHLD, SIG_IGN);
 	if(!(spider = malloc(sizeof(struct spider_params)))) {
 		perror("malloc");
 		return 1;
 	}
+	sp = spider;
 	spider->queue_db_file = queue_db_file;
 	spider->seen_db_file = seend_db_file;
 	if(create_queues(spider) < 0) {
 		fprintf(stderr, "Cannot create queues\n");
 		return 1;
 	}
+
+	signal(SIGTERM, onExit);
+	signal(SIGINT, onExit);
+
 	spider_loop(spider);
 	spider_exit(spider, 0);
 }
