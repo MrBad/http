@@ -34,6 +34,7 @@ url_parts_t* parse_url(char *url) {
 	for(;*n && *n != ':' && *n != '/' && *n != '?' && *n != '#'; n++); // until end, or : or / or ? or #
 	if(n == p) {
 		printf("Invalid host - empty host\n");
+		free(url_parts->scheme);
 		free(url_parts);
 		return NULL;
 	}
@@ -43,6 +44,7 @@ url_parts_t* parse_url(char *url) {
 	if(*n == ':') {
 		for(p = ++n, port = 0; *n && *n != '/' && *n != '?' && *n != '#'; n++) {
 			if(*n < '0' || *n > '9') {
+				free(url_parts->scheme);
 				free(url_parts->host);
 				free(url_parts);
 				printf("Invalid port - should contain only digits\n");
@@ -50,6 +52,7 @@ url_parts_t* parse_url(char *url) {
 			}
 			port = port * 10 + *n - '0';
 			if(port > 65535 || port == 0) {
+				free(url_parts->scheme);
 				free(url_parts->host);
 				free(url_parts);
 				printf("Invalid port - should be between 0 and 65535\n");
@@ -94,7 +97,8 @@ char *make_url(struct url_parts_t url_parts) {
 #endif
 
 
-void free_url_parts(url_parts_t *url_parts) {
+void free_url_parts(url_parts_t *url_parts) 
+{
 	free(url_parts->scheme);
 	free(url_parts->host);
 	free(url_parts->path);
@@ -113,7 +117,8 @@ void free_url_parts(url_parts_t *url_parts) {
 	free(url_parts);
 }
 
-url_parts_t *url_parts_dup(url_parts_t *parts) {
+url_parts_t *url_parts_dup(url_parts_t *parts) 
+{
 	url_parts_t *p;
 	if(!(p = calloc(1, sizeof(*p)))) {
 		perror("calloc");

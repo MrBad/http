@@ -6,6 +6,7 @@
 #include "parse_url.h"
 #include "mkabsurl.h"
 
+#if 0
 char *make_abs_url(char *base, char *rel) 
 {
 	char *ret, *p;
@@ -51,6 +52,7 @@ char *make_abs_url(char *base, char *rel)
 	// -------------------- //
 	return ret;
 }
+#endif
 
 char **extract_links(char *base_link, char *str) 
 {	
@@ -81,7 +83,13 @@ char **extract_links(char *base_link, char *str)
 			memmove(buf, n, k-n);
 			buf[k-n] = 0;
 			if(!(link = mkabsurl(base_link, buf))) 
-				continue;	
+				continue;
+			//------//
+			FILE *fp = fopen("mkabs.txt", "a");
+			if(!fp) exit(1);
+			fprintf(fp, "%s, %s, %s\n", base_link, buf, link);
+			fclose(fp);
+			//------//
 			arr[elmns++] = link;
 			if(elmns > size - 1) {
 				size *= 2;
