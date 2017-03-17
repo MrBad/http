@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include "read_line.h"
+#include <sys/socket.h>
 
 #if 0
 #define CBSIZE 1526
@@ -24,7 +25,8 @@ int readn(cbuf_t *cbuf, char *dst, unsigned int size)
 		if (cbuf->rpos == cbuf->wpos) {
 			// fill buf //
 			size_t wpos = cbuf->wpos % CBSIZE;
-			if ((n = read(cbuf->fd, cbuf->buf + wpos, (CBSIZE - wpos))) < 0) {
+			//if ((n = read(cbuf->fd, cbuf->buf + wpos, (CBSIZE - wpos))) < 0) {
+			if ((n = recv(cbuf->fd, cbuf->buf + wpos, (CBSIZE - wpos), 0)) < 0) {
 				if (errno == EINTR)
 					continue;
 				return -1;

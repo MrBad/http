@@ -8,7 +8,7 @@ typedef struct
 	char *body;
 	int status;
 	char *redir_url;	// if redirected, here will be url
-	size_t length;
+	ssize_t length;
 	char *type, *subtype;
 	char *last_url;
 	char *charset;

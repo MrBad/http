@@ -4,14 +4,31 @@
 
 #include "links.h"
 #include "parse_url.h"
+#include "mkabsurl.h"
 
 char *make_abs_url(char *base, char *rel) 
 {
 	char *ret, *p;
+	int len;
+	if((p = strchr(base, '#'))) {
+		*p = 0; // strip #some
+	}	
 	if(strncmp(rel, "http://", 7) == 0) {
-		return strdup(rel);
+		return strdup(rel); 
+	} else if (strncmp(rel, "//", 2) == 0) {
+		len = 5 + strlen(rel) + 1;
+		ret = malloc(len);
+		strcpy(ret, "http:");
+		strcat(ret, rel);
+		ret[len-1] = 0;
+		return ret;
 	} else if(strncmp(rel, "https://", 8) == 0) {
 		return strdup(rel);
+		
+	} 
+	// #something, javascript:xxx tel:xxx //
+	else if(rel[0] == '#' || strchr(rel, ':')) {
+		return strdup(base);
 	}
 	ret = calloc(1, strlen(base) + strlen(rel) + 2);
 	if(*rel == '/') {
@@ -26,16 +43,22 @@ char *make_abs_url(char *base, char *rel)
 		strcat(ret, rel);
 	}
 	// TODO  solve ./ and ../
+	
+	FILE *fp = fopen("mkabs.txt", "a");
+	if(!fp) exit(1);
+	fprintf(fp, "%s, %s, %s\n", base, rel, ret);
+	fclose(fp);
+	// -------------------- //
 	return ret;
 }
 
 char **extract_links(char *base_link, char *str) 
 {	
-	char **arr, *p = str, *k, *n, buf[512], *link;
+	char **arr, *p, *k, *n, buf[512], *link;
 	int size = 16, elmns = 0, i;
 	if(!base_link || !str)
 		return NULL;
-
+	p = str;
 	if(!(arr = calloc(size, sizeof(char *)))) {
 		perror("calloc");
 		return NULL;
@@ -55,9 +78,9 @@ char **extract_links(char *base_link, char *str)
 			n = k;
 			while(*k && *k!='"') k++;
 			if(!*k) break;
-			strncpy(buf, n, k-n);
+			memmove(buf, n, k-n);
 			buf[k-n] = 0;
-			if(!(link = make_abs_url(base_link, buf))) 
+			if(!(link = mkabsurl(base_link, buf))) 
 				continue;	
 			arr[elmns++] = link;
 			if(elmns > size - 1) {

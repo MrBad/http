@@ -126,6 +126,7 @@ worker_getLink(worker_t *self, char *base_url)
 			printf("child: cannot get %s\n", base_url);
 			//sendMsg(self->cbuf, ABORTING, NULL);
 			sendMsg(self->cbuf, FAIL_LINK, url);
+			request_del(req);
 			return;
 		}
 		if(res->status != 301 && res->status != 302) 
@@ -166,7 +167,7 @@ worker_getLink(worker_t *self, char *base_url)
 	response_del(res);
 
 	sendMsg(self->cbuf, GOT_LINK, base_url);
-	if(redirects) sendMsg(self->cbuf, GOT_LINK, url);
+	//if(redirects) sendMsg(self->cbuf, GOT_LINK, url);
 	printf("child: sent ready\n");
 }
 

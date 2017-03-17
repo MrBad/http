@@ -5,7 +5,7 @@ OFLAGS=-c
 DFLAGS=EST_TREE
 CFLAGS=-g -Wall -Wextra -std=gnu99 -pedantic-errors -I../ -I$(INCLUDE) -D$(DFLAGS)
 
-OBJECTS=worker.o http.o links.o
+OBJECTS=worker.o http.o links.o mkabsurl.o
 LOBJECTS=tree.o list.o str.o url.o buf.o parse_url.o read_line.o
 
 all: $(OBJECTS) ds.a Makefile spider.o test_http.o test_buf.o

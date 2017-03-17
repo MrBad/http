@@ -9,6 +9,7 @@
 #include <sys/time.h>
 #include <assert.h>
 #include <signal.h>
+#include <sys/wait.h>
 #include "list.h"
 #include "tree.h"
 #include "str.h"
@@ -17,7 +18,9 @@
 #include "read_line.h"
 
 extern int master;
+
 #define MAX_THREADS 10
+
 typedef struct spider_params 
 {
 	list_t *queue;	// list of url_t
@@ -183,7 +186,65 @@ int close_queues(struct spider_params *spider)
 
 url_t *url_arr[MAX_THREADS];
 
+// don't hit too fast same host! //
+char **seen_hosts = NULL;
+int num_sh = 0, size_sh = 0;
 
+
+void add_seen_host(char *host) 
+{
+	int i;
+	if(size_sh == 0) {
+		size_sh = 2;
+		seen_hosts = calloc(size_sh, sizeof(char *));
+	}
+	seen_hosts[num_sh++] = strdup(host);
+	if(num_sh == size_sh) {
+		size_sh *= 2;
+		seen_hosts = realloc(seen_hosts, size_sh * sizeof(char *));
+		if(!seen_hosts) exit(1);
+		for(i = num_sh; i < size_sh; i++) {
+			seen_hosts[i] = 0;
+		}
+#if 0
+		FILE *fp = fopen("hosts.db", "a");
+		fprintf(fp, "-----------\nnum_sh: %d, size_sh: %d\n----------\n", num_sh, size_sh);
+		for(i = 0; i < num_sh; i++) {
+			fputs(seen_hosts[i], fp);
+			fputs("\n", fp);
+		}
+		fclose(fp);
+#endif
+	}
+	if(num_sh > 1000) {
+		for(i = 0; i < num_sh; i++) {
+			seen_hosts[i] = seen_hosts[i+1];
+		}
+		num_sh--;
+	}
+}
+
+int del_seen_hosts() {
+	int i;
+	if(!seen_hosts)
+		return -1;
+	for(i = 0; i < num_sh; i++)
+	   	free(seen_hosts[i]);
+	num_sh = 0;
+	return 0;
+}
+int in_host_arr(char *host) {
+	int i;
+	if(!seen_hosts)
+		return -1;
+	for(i = 0; i < num_sh; i++) {
+		if(strcmp(host, seen_hosts[i]) == 0)
+			return 0;
+	}
+	return -1;
+}
+
+#if 0
 int in_host_arr(char *host) {
 	int i;
 	for(i = 0; i < MAX_THREADS; i++) {
@@ -194,13 +255,16 @@ int in_host_arr(char *host) {
 	}
 	return -1;
 }
+#endif
 
 int getNextUrls(spider_t *spider) 
 {
 	list_node_t *node;
-	int i = 0, items;	
+	int i = 0, items = 0;	
 	url_t *url;
 	list_node_t *nodes[MAX_THREADS];
+	if(!spider)
+		exit(1);
 	memset(url_arr, 0, sizeof(url_arr));
 	memset(nodes, 0, sizeof(nodes));
 	list_foreach(spider->queue, node) {
@@ -209,6 +273,7 @@ int getNextUrls(spider_t *spider)
 			nodes[i] = node;
 			url_arr[i++] = url_dup(url);
 			items++;
+			add_seen_host(url->parts->host);
 		}
 		if(i == MAX_THREADS) break;
 	}
@@ -216,6 +281,12 @@ int getNextUrls(spider_t *spider)
 	for(i = 0; i < MAX_THREADS; i++) {
 		if(!nodes[i]) continue;
 		list_del(spider->queue, nodes[i]);
+	}
+	if(items == 0) {
+		printf("SEEN ALL HOSTS\n\n\n");
+		exit(1);
+		del_seen_hosts();
+		return getNextUrls(spider);
 	}
 	return items;
 }
@@ -261,10 +332,11 @@ processWorkers(spider_t *spider)
 	char buf[4096];
 	struct timeval tv;
 	fd_set rfds;
-	int i, n, maxfd, ret;
+	int i, n, maxfd = 0, ret;
 
 	tv.tv_sec = 3;
 	tv.tv_usec = 0;
+	
 	FD_ZERO(&rfds);
 	for(i = 0; i < MAX_THREADS; i++) {
 		if(!spider->workers[i]) 
@@ -302,6 +374,7 @@ eagain:
 
 
 				if(type == GOT_LINK) {
+FILE *fp = fopen("tadd.db", "a");fputs(msg, fp); fputs("\n", fp);fclose(fp);
 					// mark worker AVAILABLE
 					// and add link to seen links
 					printf("worker is ready\n");
@@ -339,6 +412,7 @@ eagain:
 						strDel(str);
 						goto eagain;
 					}
+					//tree_add(spider->seen, str);
 					url_t *url = url_new(str);
 					if(!url) {
 						strDel(str);
@@ -370,7 +444,7 @@ void
 spider_loop(spider_t *spider) 
 {
 	int i, id ;
-	//char buf[4096];
+	static int iterations = 0;
 	for(;;) {
 		getNextUrls(spider);
 		if(spider->queue->items == 0) {
@@ -385,6 +459,10 @@ spider_loop(spider_t *spider)
 			// transmit worker the url //
 			sendMsg(spider->workers[id]->cbuf, GET_LINK, url_arr[i]->url->str);
 			spider->workers[id]->status = FETCHING;
+		}
+		if(iterations++ == 10000) {
+			printf("Reached %d iterations\n", iterations);
+			break;
 		}
 	}
 }
@@ -409,11 +487,13 @@ void onExit()
 	printf("Spider exited normally\n"); fflush(stdout);
 	kill(getpid(), SIGTERM);
 }
+
 int main() 
 {
 	struct spider_params *spider;
 	char *queue_db_file = "queue.db";
 	char *seend_db_file = "seen.db";
+	int i;
 	//signal(SIGPIPE, SIG_IGN);
 //	signal(SIGCHLD, SIG_IGN);
 	if(!(spider = malloc(sizeof(struct spider_params)))) {
@@ -423,6 +503,9 @@ int main()
 	sp = spider;
 	spider->queue_db_file = queue_db_file;
 	spider->seen_db_file = seend_db_file;
+	for(i = 0; i < MAX_THREADS; i++)
+		spider->workers[i] = NULL;
+	
 	if(create_queues(spider) < 0) {
 		fprintf(stderr, "Cannot create queues\n");
 		return 1;

@@ -51,6 +51,7 @@ void response_del(response_t *res)
 		free(res->body);
 	if(res->type) free(res->type);
 	if(res->subtype) free(res->subtype);
+	if(res->charset) free(res->charset);
 	if(res->redir_url) free(res->redir_url);
 	if(res->last_url) free(res->last_url);
 	free(res);
@@ -86,13 +87,13 @@ int parse_headers(response_t *res)
 	if(!res->header) 
 		return -1;
 	hstr = res->header;
-
 	while((p = strchr(hstr, '\n'))) {
 		if((unsigned)(p-hstr) > sizeof(line)-1) {
 			fprintf(stderr, "line too large");
 			return -1;
 		}
-		line[0] = 0;
+		memset(line, 0, sizeof(line));
+		memset(key, 0, sizeof(key));
 		len = p-hstr;
 		strncpy(line, hstr, len);
 		line[len] = 0;
@@ -119,7 +120,8 @@ int parse_headers(response_t *res)
 			continue;
 		
 		}
-		if((unsigned)(k-line) > sizeof(key)-1) return -1;
+		if((unsigned)(k-line) > sizeof(key)-1) 
+			return -1;
 		strncpy(key, line, k-line);
 		key[k-line] = 0;
 		k++;
@@ -175,12 +177,13 @@ int parse_headers(response_t *res)
 		// Location
 		else if(strcasecmp("location", key) == 0) {
 			n = k;
-			while(!isspace(*k)) k++;
+			while(*k && !isspace(*k)) k++;
 			if(!(res->redir_url = malloc(k-n+1))) {
 				perror("malloc");
 				return -1;
 			}
 			strncpy(res->redir_url, n, k-n);
+			res->redir_url[k-n] = 0;
 			//printf("REDIR: {%s}\n", res->redir_url);
 		}
 	}
@@ -377,7 +380,7 @@ response_t *getLink(request_t *req)
 			fprintf(stderr, "Incomplete body, read only %d from %lu\n", n, res->length);
 			goto fail;
 		}
-	} 
+	}
 	else {
 		// maybe i will loop until feof
 		if(res->status == 200) {
@@ -391,7 +394,7 @@ response_t *getLink(request_t *req)
 			fprintf(stderr, "Error in getting body\n");
 			goto fail;
 		}
-		if(!(res->body = malloc(buf->len + 1))) {
+		if(!(res->body = calloc(1, buf->len + 1))) {
 			perror("malloc");
 			goto fail;
 		}

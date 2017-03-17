@@ -14,7 +14,8 @@ url_parts_t* parse_url(char *url) {
 	char *p, *n;
 	int port;
 	url_parts_t *url_parts;
-
+	if(!url) 
+		return NULL;
 	if(! (p = strstr(url, "://"))) {
 		printf("Invalid scheme in url [%s] - use http://...\n", url);
 		return NULL;
